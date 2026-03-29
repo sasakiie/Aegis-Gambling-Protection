@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 class TestKeywordLoader {
   final List<String> brands;
   final List<RegExp> compiledPatterns;
+  final List<String> normalizedBrands;
 
   TestKeywordLoader({
     required this.brands,
@@ -30,15 +31,23 @@ class TestKeywordLoader {
              }
            })
            .whereType<RegExp>()
+           .toList(),
+       normalizedBrands = brands
+           .map((b) => b.toLowerCase().replaceAll(RegExp(r'[\s\-_]'), ''))
            .toList();
 
   bool isGambling(String url) {
     final lower = url.toLowerCase();
+    final normalized = lower.replaceAll(RegExp(r'[\s\-_]'), '');
     for (final brand in brands) {
       if (lower.contains(brand)) return true;
     }
+    for (final brand in normalizedBrands) {
+      if (brand.isNotEmpty && normalized.contains(brand)) return true;
+    }
     for (final pattern in compiledPatterns) {
       if (pattern.hasMatch(lower)) return true;
+      if (pattern.hasMatch(normalized)) return true;
     }
     return false;
   }
@@ -133,6 +142,14 @@ final _testLoader = TestKeywordLoader(
     r'[a-z0-9]*88[a-z0-9]*\.(?:com|net|club|vip|pro|bet|tv|win)',
     r'[a-z0-9]*bet\.(?:com|net|org|asia|cc|uk|us|win|fun|life|mobi|pro)',
     r'[a-z0-9]+win\d*\.(?:com|net|org|pro|mobi|cool|wtf)',
+    r'(?:^|\.)888[a-z]?\.(?:com|net|bet|co|tv|pro|win)',
+    r'\d+win\.(?:com|net|pro|vip|bet|co|win)',
+    r'\d+[a-z]?bet\.(?:com|net|pro|vip|co|win)',
+    r'\d+lottery\.(?:com|net|pro|vip)',
+    r'casino\d+\.(?:com|net|pro|vip|win)',
+    r'[a-z]{2,5}88\.(?:com|net|co|vip|club|win|pro)',
+    r'[a-z]{2,5}789\.(?:com|net|co|club|vip)',
+    r'[a-z]{1,4}\d{2,3}\.(?:club|win|vin|vip|asia|social|cc|fun)',
     r'\w+\.casino',
     r'\w+\.bet',
     r'\w+\.poker',

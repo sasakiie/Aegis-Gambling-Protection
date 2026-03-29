@@ -1,59 +1,51 @@
-// ============================================================================
-// AEGIS Shield — main.dart (Entry Point)
-// ============================================================================
-// จากเดิม 864 บรรทัด → เหลือ ~30 บรรทัด
-//
-// หน้าที่เดียว:
-//   1. โหลด .env (Gemini API key)
-//   2. โหลด gambling_keywords.json
-//   3. สร้าง DashboardController (แก้ช่องโหว่ #2: ลำดับ Async)
-//   4. runApp()
-// ============================================================================
-
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'controllers/keyword_loader.dart';
+import 'controllers/ad_removal_cache.dart';
+import 'controllers/app_config.dart';
 import 'controllers/dashboard_controller.dart';
 import 'controllers/debug_logger.dart';
+import 'controllers/keyword_loader.dart';
 import 'views/dashboard/dashboard_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ── Phase 0: เริ่มระบบ Debug Logger ──
   await DebugLogger.instance.init();
-  DebugLogger.instance.system('🚀 AEGIS Shield starting...');
+  DebugLogger.instance.system('AEGIS Shield starting');
 
-  // ── Phase 1: โหลด Config (ต้องเสร็จก่อน — ช่องโหว่ #2) ──
   try {
-    await dotenv.load(fileName: '.env');
-    final hasKey = (dotenv.env['GEMINI_API_KEY'] ?? '').isNotEmpty;
-    DebugLogger.instance.system('✅ .env loaded (API key: ${hasKey ? "found" : "missing"})');
+    await AppConfig.load();
+    DebugLogger.instance.system(
+      'Config loaded (backend: ${AppConfig.pocketBaseUrl.isNotEmpty ? "configured" : "missing"}, '
+      'Gemini key: ${AppConfig.hasGeminiApiKey ? "found" : "missing"})',
+    );
   } catch (e) {
-    DebugLogger.instance.error('⚠️ .env load failed: $e');
-    // ignore: avoid_print
-    print('⚠️ .env not found or corrupted: $e — app will continue without API key');
+    DebugLogger.instance.error('Config load failed: $e');
+    print('Config load failed: $e - app will continue with defaults');
   }
 
   try {
     final kw = KeywordLoader();
     await kw.load();
     DebugLogger.instance.system(
-      '✅ Keywords loaded: ${kw.brandCount} brands, ${kw.patternCount} regex, '
+      'Keywords loaded: ${kw.brandCount} brands, ${kw.patternCount} regex, '
       '${kw.providerCount} providers, ${kw.gameTypeCount} types',
     );
   } catch (e) {
-    DebugLogger.instance.error('⚠️ Keywords load failed: $e');
-    // ignore: avoid_print
-    print('⚠️ gambling_keywords.json load failed: $e — using fallback keywords');
+    DebugLogger.instance.error('Keywords load failed: $e');
+    print('gambling_keywords.json load failed: $e - using fallback keywords');
   }
 
-  // ── Phase 2: สร้าง Controllers ──
-  final dashboardController = DashboardController();
-  DebugLogger.instance.system('✅ Controllers initialized');
+  try {
+    await AdRemovalCache.init();
+    DebugLogger.instance.system('AdRemovalCache initialized');
+  } catch (e) {
+    DebugLogger.instance.error('AdRemovalCache init failed: $e');
+  }
 
-  // ── Phase 3: เปิดแอป ──
-  DebugLogger.instance.system('🏁 runApp() — AEGIS Shield ready');
+  final dashboardController = DashboardController();
+  DebugLogger.instance.system('Controllers initialized');
+  DebugLogger.instance.system('runApp - AEGIS Shield ready');
+
   runApp(AegisApp(dashboardController: dashboardController));
 }
 
@@ -70,10 +62,10 @@ class AegisApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0A0E21),
-        colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF00D4FF),
-          secondary: const Color(0xFF7C4DFF),
-          surface: const Color(0xFF1A1F36),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF00D4FF),
+          secondary: Color(0xFF7C4DFF),
+          surface: Color(0xFF1A1F36),
         ),
       ),
       home: DashboardScreen(controller: dashboardController),

@@ -47,3 +47,7 @@ app.*.map.json
 
 # Environment variables
 .env
+
+# PocketBase local runtime
+/pocketbase/pb_data/
+/pocketbase/pocketbase.exe

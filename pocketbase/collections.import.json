@@ -1,0 +1,156 @@
+{
+  "collections": [
+    {
+      "name": "reports",
+      "type": "base",
+      "system": false,
+      "listRule": "@request.auth.id != '' && created_by_token = @request.auth.id",
+      "viewRule": "@request.auth.id != '' && created_by_token = @request.auth.id",
+      "createRule": "@request.auth.id != ''",
+      "updateRule": null,
+      "deleteRule": null,
+      "fields": [
+        {
+          "name": "domain",
+          "type": "text",
+          "required": true,
+          "min": 3,
+          "max": 255,
+          "pattern": "^[a-z0-9.-]+$"
+        },
+        {
+          "name": "selectors",
+          "type": "json",
+          "required": false,
+          "maxSize": 4096
+        },
+        {
+          "name": "is_gambling",
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "required": false,
+          "max": 500
+        },
+        {
+          "name": "report_type",
+          "type": "select",
+          "required": true,
+          "maxSelect": 1,
+          "values": [
+            "gambling_site",
+            "ad_selector",
+            "false_positive",
+            "selector_miss"
+          ]
+        },
+        {
+          "name": "client_version",
+          "type": "text",
+          "required": false,
+          "max": 64
+        },
+        {
+          "name": "created_by_token",
+          "type": "text",
+          "required": false,
+          "max": 64
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "maxSelect": 1,
+          "values": [
+            "pending",
+            "accepted",
+            "promoted",
+            "rejected"
+          ]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_reports_domain_created ON reports (domain, created)",
+        "CREATE INDEX idx_reports_token_created ON reports (created_by_token, created)",
+        "CREATE INDEX idx_reports_domain_type ON reports (domain, report_type)"
+      ]
+    },
+    {
+      "name": "ad_rules",
+      "type": "base",
+      "system": false,
+      "listRule": "verified = true || report_count >= 10",
+      "viewRule": "verified = true || report_count >= 10",
+      "createRule": null,
+      "updateRule": null,
+      "deleteRule": null,
+      "fields": [
+        {
+          "name": "domain",
+          "type": "text",
+          "required": true,
+          "min": 3,
+          "max": 255,
+          "pattern": "^[a-z0-9.-]+$"
+        },
+        {
+          "name": "selectors",
+          "type": "json",
+          "required": false,
+          "maxSize": 4096
+        },
+        {
+          "name": "is_gambling",
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": "report_count",
+          "type": "number",
+          "required": true,
+          "min": 0,
+          "max": 100000,
+          "noDecimal": true
+        },
+        {
+          "name": "verified",
+          "type": "bool",
+          "required": true
+        },
+        {
+          "name": "source_type",
+          "type": "select",
+          "required": true,
+          "maxSelect": 1,
+          "values": [
+            "admin_verified",
+            "report_promoted",
+            "seeded"
+          ]
+        },
+        {
+          "name": "created_by_token",
+          "type": "text",
+          "required": false,
+          "max": 64
+        },
+        {
+          "name": "last_reported_at",
+          "type": "date",
+          "required": false,
+          "min": "",
+          "max": ""
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_ad_rules_domain ON ad_rules (domain)",
+        "CREATE INDEX idx_ad_rules_trust ON ad_rules (verified, report_count)",
+        "CREATE INDEX idx_ad_rules_updated ON ad_rules (updated)"
+      ]
+    }
+  ],
+  "deleteMissing": false
+}

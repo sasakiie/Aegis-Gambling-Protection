@@ -1,0 +1,73 @@
+{
+  "name": "ad_rules",
+  "type": "base",
+  "system": false,
+  "listRule": "verified = true || report_count >= 10",
+  "viewRule": "verified = true || report_count >= 10",
+  "createRule": null,
+  "updateRule": null,
+  "deleteRule": null,
+  "fields": [
+    {
+      "name": "domain",
+      "type": "text",
+      "required": true,
+      "min": 3,
+      "max": 255,
+      "pattern": "^[a-z0-9.-]+$"
+    },
+    {
+      "name": "selectors",
+      "type": "json",
+      "required": false,
+      "maxSize": 4096
+    },
+    {
+      "name": "is_gambling",
+      "type": "bool",
+      "required": true
+    },
+    {
+      "name": "report_count",
+      "type": "number",
+      "required": true,
+      "min": 0,
+      "max": 100000,
+      "noDecimal": true
+    },
+    {
+      "name": "verified",
+      "type": "bool",
+      "required": true
+    },
+    {
+      "name": "source_type",
+      "type": "select",
+      "required": true,
+      "maxSelect": 1,
+      "values": [
+        "admin_verified",
+        "report_promoted",
+        "seeded"
+      ]
+    },
+    {
+      "name": "created_by_token",
+      "type": "text",
+      "required": false,
+      "max": 64
+    },
+    {
+      "name": "last_reported_at",
+      "type": "date",
+      "required": false,
+      "min": "",
+      "max": ""
+    }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX idx_ad_rules_domain ON ad_rules (domain)",
+    "CREATE INDEX idx_ad_rules_trust ON ad_rules (verified, report_count)",
+    "CREATE INDEX idx_ad_rules_updated ON ad_rules (updated)"
+  ]
+}

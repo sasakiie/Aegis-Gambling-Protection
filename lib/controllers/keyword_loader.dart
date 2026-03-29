@@ -25,6 +25,7 @@ class KeywordLoader {
   List<String> genericGamblingSignals = [];
 
   List<RegExp> _compiledPatterns = [];
+  List<String> _normalizedBrands = [];
   bool _loaded = false;
 
   Future<void> load() async {
@@ -45,6 +46,7 @@ class KeywordLoader {
       gameNames = List<String>.from(data['game_names'] ?? []);
       urlIndicators = List<String>.from(data['url_indicators'] ?? []);
       genericGamblingSignals = List<String>.from(data['generic_gambling_signals'] ?? []);
+      _normalizedBrands = brands.map(_normalizeForMatch).toList();
 
       _compiledPatterns = urlRegexPatterns
           .map((p) {
@@ -66,13 +68,22 @@ class KeywordLoader {
 
   bool isGambling(String url) {
     final lower = url.toLowerCase();
+    final normalized = _normalizeForMatch(url);
     for (final brand in brands) {
       if (lower.contains(brand)) return true;
     }
+    for (final brand in _normalizedBrands) {
+      if (brand.isNotEmpty && normalized.contains(brand)) return true;
+    }
     for (final pattern in _compiledPatterns) {
       if (pattern.hasMatch(lower)) return true;
+      if (pattern.hasMatch(normalized)) return true;
     }
     return false;
+  }
+
+  static String _normalizeForMatch(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s\-_]'), '');
   }
 
   String toJsonForJs() {

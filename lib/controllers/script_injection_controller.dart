@@ -52,6 +52,29 @@ class ScriptInjectionController {
   /// คืนจำนวน EasyList rules
   int get easyListRuleCount => EasyListService.instance.ruleCount;
 
+  /// สร้าง JS สำหรับลบ element ตาม CSS Selectors ที่ AI ให้มา
+  String getDynamicSelectorsJs(List<String> selectors) {
+    if (selectors.isEmpty) return '';
+    final selectorsJson = selectors.map((s) => '"${s.replaceAll('"', '\\"')}"').join(',');
+    return '''
+      (function() {
+        try {
+          var selectors = [$selectorsJson];
+          var removed = 0;
+          selectors.forEach(function(sel) {
+            try {
+              var els = document.querySelectorAll(sel);
+              els.forEach(function(el) { el.remove(); removed++; });
+            } catch(e) {}
+          });
+          if (window.AegisCacheMiss) {
+            window.AegisCacheMiss.postMessage(removed.toString());
+          }
+        } catch(e) {}
+      })();
+    ''';
+  }
+
   /// โหลด EasyList (background)
   void loadEasyList({void Function(String)? onLog}) {
     EasyListService.instance.loadFilters(onLog: onLog);

@@ -6,10 +6,11 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../controllers/app_config.dart';
 import '../../controllers/dashboard_controller.dart';
 
 import '../../models/log_entry.dart';
+import '../../models/phase_b_models.dart';
 import '../browser/webview_screen.dart';
 import 'widgets/shield_header.dart';
 import 'widgets/feature_toggle_card.dart';
@@ -46,6 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     // โหลดข้อมูล AI status
     ctrl.loadAiStatus();
+    ctrl.initPhaseB();
     // เริ่มรับ log จาก VPN
     ctrl.startListeningVpnLogs();
     // ข้อความต้อนรับ
@@ -60,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showSettingsDialog() async {
-    final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+    final apiKey = AppConfig.geminiApiKey;
     final maskedKey = apiKey.isEmpty
         ? 'Not configured'
         : '${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}';
@@ -135,6 +137,100 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
             const SizedBox(height: 16),
+            const Text(
+              'Community Backend',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D1117),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        ctrl.phaseBAvailability == PhaseBAvailability.ready
+                            ? Icons.cloud_done
+                            : ctrl.phaseBAvailability ==
+                                    PhaseBAvailability.degraded
+                                ? Icons.cloud_off
+                                : Icons.cloud_queue,
+                        size: 16,
+                        color: ctrl.phaseBAvailability == PhaseBAvailability.ready
+                            ? const Color(0xFF3FB950)
+                            : ctrl.phaseBAvailability ==
+                                    PhaseBAvailability.degraded
+                                ? const Color(0xFFFFB86B)
+                                : Colors.grey,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          ctrl.phaseBMessage,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        ctrl.reportAvailable
+                            ? 'Report: ready'
+                            : 'Report: unavailable',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        ctrl.syncAvailable ? 'Sync: ready' : 'Sync: unavailable',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: ctrl.syncAvailable && !ctrl.syncInProgress
+                            ? () async {
+                                await ctrl.syncCommunityRules();
+                                if (ctx.mounted) {
+                                  Navigator.pop(ctx);
+                                }
+                              }
+                            : null,
+                        child: Text(
+                          ctrl.syncInProgress ? 'Syncing...' : 'Sync now',
+                          style: TextStyle(
+                            color: ctrl.syncAvailable
+                                ? const Color(0xFF00D4FF)
+                                : Colors.grey,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -183,7 +279,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => WebViewScreen(
-          onLog: (msg) => ctrl.addLog(msg, LogType.cleaned),
+          onLog: (msg) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              ctrl.addLog(msg, LogType.cleaned);
+            });
+          },
           adBlockEnabled: ctrl.adBlockEnabled,
         ),
       ),
@@ -284,6 +385,57 @@ class _DashboardScreenState extends State<DashboardScreen>
                         activeColor: const Color(0xFF7C4DFF),
                       ),
                     ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: const Color(0xFF00D4FF).withAlpha(16),
+                      border: Border.all(
+                        color: const Color(0xFF00D4FF).withAlpha(40),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          ctrl.phaseBAvailability == PhaseBAvailability.ready
+                              ? Icons.cloud_sync
+                              : Icons.cloud_off,
+                          size: 16,
+                          color: ctrl.phaseBAvailability == PhaseBAvailability.ready
+                              ? const Color(0xFF00D4FF)
+                              : const Color(0xFFFFB86B),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            ctrl.phaseBMessage,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (ctrl.syncAvailable)
+                          TextButton(
+                            onPressed: ctrl.syncInProgress
+                                ? null
+                                : () => ctrl.syncCommunityRules(),
+                            child: Text(
+                              ctrl.syncInProgress ? 'Syncing' : 'Sync',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),

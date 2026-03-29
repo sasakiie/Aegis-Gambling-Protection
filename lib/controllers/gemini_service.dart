@@ -30,10 +30,11 @@ class GeminiService {
   Future<GeminiClassification?> classifyUrl({
     required String url,
     String pageTitle = '',
-    String contentSnippet = '',
+    String domContent = '',
+    String ocrContent = '',
   }) async {
     try {
-      final prompt = _buildTextPrompt(url, pageTitle, contentSnippet);
+      final prompt = _buildPromptBase(url, pageTitle, domContent, ocrContent, isVision: false);
       _log('📝 Text prompt length: ${prompt.length} chars');
       final response = await _callGeminiText(prompt);
 
@@ -56,17 +57,21 @@ class GeminiService {
   Future<GeminiClassification?> classifyScreenshot({
     required Uint8List screenshotBytes,
     String url = '',
-    String extractedContent = '',
+    String pageTitle = '',
+    String domContent = '',
+    String ocrContent = '',
   }) async {
     try {
       final base64Image = base64Encode(screenshotBytes);
       _log(
-        '🖼️ Vision: sending ${(screenshotBytes.length / 1024).toStringAsFixed(0)} KB image + ${extractedContent.length} chars text',
+        '🖼️ Vision: sending ${(screenshotBytes.length / 1024).toStringAsFixed(0)} KB image + ${domContent.length + ocrContent.length} chars text',
       );
+      
+      final prompt = _buildPromptBase(url, pageTitle, domContent, ocrContent, isVision: true);
+      
       final response = await _callGeminiVision(
         base64Image,
-        url,
-        extractedContent,
+        prompt,
       );
 
       if (response == null) {
@@ -84,84 +89,53 @@ class GeminiService {
     }
   }
 
-  String _buildTextPrompt(String url, String title, String snippet) {
-    final truncatedSnippet = snippet.length > 5000
-        ? snippet.substring(0, 5000)
-        : snippet;
-
-    return '''You are an expert website classifier specialized in detecting online gambling/betting websites.
-Your job is to protect children from accessing gambling sites.
-
-IMPORTANT: Many gambling sites DISGUISE themselves as normal websites but embed gambling content
-in their page data, JavaScript, or rendered after page load. You must check ALL provided data carefully.
-
-=== STRONG GAMBLING INDICATORS (high confidence if found) ===
-- Game categories: SLOT, LIVECASINO, BACCARAT, SPORT BETTING, FISHING GAME, POKER
-- Game providers: PGSOFT, SAGAME, SEXY, PRAGMATIC, SLOTXO, JOKER, JILI, ALLBET, PRETTY, SBO, DREAM, SPADE, CQ9, HACKSAW, WM, NAGA, SPINIX, 918KISS
-- Financial operations: deposit, withdraw, minDepositAmt, minWithdrawAmt, reimburse, credit
-- Thai gambling terms: สล็อต, บาคาร่า, คาสิโน, แทงบอล, พนัน, เครดิตฟรี, ฝากถอน, หวย
-- Brand patterns: UFA, Betflix, SBOBET, GCLUB, LSM99, etc.
-- Game data objects with type:SLOT, category:LIVECASINO, category:SPORT
-
-=== CHECK THESE DATA SOURCES ===
-1. VISIBLE_TEXT: rendered page text
-2. NEXT_DATA: JSON data from Next.js SPA — check for game lists, providers, deposit/withdraw config
-3. SCRIPT_DATA: embedded JSON with game/casino data
-4. META: page metadata
-5. LINKS: navigation links pointing to gambling sections
-6. IMAGES: image sources/alt text with gambling references
-
-=== NON-GAMBLING (avoid false positives) ===
-- Technology/IT companies, game review sites, news about gambling industry
-- Game stores (Steam, PlayStation, Nintendo) — selling video games is NOT gambling
-- Educational content about gambling addiction
-- E-commerce, social media, banking apps
-
-URL: $url
-Page Title: ${title.isEmpty ? '(not available)' : title}
-
-Extracted Page Content:
-$truncatedSnippet
-
-Respond ONLY with a valid JSON object (no markdown, no code blocks):
-{"isGambling": true/false, "confidence": 0.0-1.0, "reason": "brief explanation in English"}''';
+  String _sanitizeForXml(String input) {
+    return input
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
   }
 
-  String _buildVisionPrompt(String url, String extractedContent) {
-    final hasContent = extractedContent.trim().isNotEmpty;
-    final truncatedContent = extractedContent.length > 3000
-        ? extractedContent.substring(0, 3000)
-        : extractedContent;
+  String _buildPromptBase(String url, String title, String domContent, String ocrContent, {bool isVision = false}) {
+    final truncDom = domContent.length > 5000 ? domContent.substring(0, 5000) : domContent;
+    final truncOcr = ocrContent.length > 2000 ? ocrContent.substring(0, 2000) : ocrContent;
+    
+    final safeTitle = _sanitizeForXml(title);
+    final safeDom = _sanitizeForXml(truncDom);
+    final safeOcr = _sanitizeForXml(truncOcr);
 
-    return '''You are a visual website classifier specialized in detecting online gambling websites.
+    final String instruction = isVision 
+      ? 'Analyze the screenshot AND the XML text content extracted from the page. Determine if this is an online gambling/betting website. Look for visual gambling indicators (slot machines, cards, betting banners, login forms for casino).'
+      : 'Analyze the XML text content extracted from the webpage. Determine if this is an online gambling/betting website. Look for gambling keywords, providers, or game types.';
 
-Analyze this screenshot of a webpage and determine if it is an online gambling website.
+    return '''You are an expert website classifier specialized in detecting online gambling websites.
+Your job is to protect children from accessing these sites.
 
-Look for these VISUAL gambling indicators:
-- Casino/slot machine imagery, playing cards, dice, roulette wheels
-- Banners promoting online betting, sports betting, or casino games
-- Thai text related to gambling: สล็อต, บาคาร่า, เครดิตฟรี, ฝากถอน, แทงบอล, พนัน
-- Logos of gambling brands: UFA, PG Slot, SA Gaming, Betflix, SBOBET, Joker, etc.
-- Promotional banners with deposit/withdrawal, free credits, bonus offers
-- Login/register forms specifically for gambling platforms
-- Live casino dealer images or slot game thumbnails
-- Website layouts typical of gambling platforms (dark themes with neon colors, game grids)
+<instruction>
+$instruction
+IMPORTANT: Many gambling sites DISGUISE themselves as normal websites but embed gambling content in their DOM. YOU MUST read both the `<dom_content>` and `<ocr_content>` components.
+Respond ONLY with a valid JSON object (no markdown, no code blocks) matching this schema:
+{
+  "isGambling": true/false,
+  "confidence": 0.0-1.0,
+  "reason": "brief explanation in English",
+  "semanticSelectors": ["a[href*='ufa']", ".gambling-banner", "img[alt*='slot']"]
+}
+For `semanticSelectors`, output an array of valid semantic CSS Selectors that specifically target gambling ads or banners inside the DOM. Do NOT use generic tags like `div` or generic classes like `container`. Return an empty array if no specific gambling elements are found.
+</instruction>
 
-NON-gambling indicators (avoid false positives):
-- Regular news, shopping, social media, or entertainment websites
-- Video game platforms (Steam, PlayStation, etc.)
-- Educational or informational content about gambling addiction
-- Financial or banking websites
+<website_context>
+  <url>$url</url>
+  <title>$safeTitle</title>
+</website_context>
 
-${url.isNotEmpty ? 'URL context: $url' : ''}
-${hasContent ? '\n=== EXTRACTED TEXT FROM PAGE (OCR + DOM) ===\n$truncatedContent\n=== END EXTRACTED TEXT ===' : ''}
+<dom_content>
+$safeDom
+</dom_content>
 
-IMPORTANT: Use BOTH the screenshot image AND the extracted text above to make your decision.
-The extracted text was read from the actual webpage by OCR and DOM parsing.
-If either the visual elements OR the text content suggest gambling, classify as gambling.
-
-Respond ONLY with a valid JSON object (no markdown, no code blocks):
-{"isGambling": true/false, "confidence": 0.0-1.0, "reason": "brief explanation of what visual elements were detected"}''';
+<ocr_content>
+$safeOcr
+</ocr_content>''';
   }
 
   Future<String?> _callGeminiText(String prompt) async {
@@ -191,8 +165,7 @@ Respond ONLY with a valid JSON object (no markdown, no code blocks):
 
   Future<String?> _callGeminiVision(
     String base64Image,
-    String pageUrl,
-    String extractedContent,
+    String visionPrompt,
   ) async {
     final url = Uri.parse('$_baseUrl/$_model:generateContent?key=$apiKey');
 
@@ -203,7 +176,7 @@ Respond ONLY with a valid JSON object (no markdown, no code blocks):
             {
               'inline_data': {'mime_type': 'image/jpeg', 'data': base64Image},
             },
-            {'text': _buildVisionPrompt(pageUrl, extractedContent)},
+            {'text': visionPrompt},
           ],
         },
       ],
@@ -260,10 +233,16 @@ Respond ONLY with a valid JSON object (no markdown, no code blocks):
 
       final json = jsonDecode(cleaned) as Map<String, dynamic>;
 
+      List<String> selectors = [];
+      if (json['semanticSelectors'] != null) {
+        selectors = List<String>.from(json['semanticSelectors'] as List);
+      }
+
       return GeminiClassification(
         isGambling: json['isGambling'] as bool? ?? false,
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
         reason: json['reason'] as String? ?? 'Unknown',
+        semanticSelectors: selectors,
       );
     } catch (e) {
       _log(

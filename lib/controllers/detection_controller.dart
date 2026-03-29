@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'dart:typed_data';
 import '../models/classification_result.dart';
 import 'keyword_loader.dart';
-import 'classification_cache.dart';
+import 'ad_removal_cache.dart';
 import 'gemini_service.dart';
 import 'ocr_service.dart';
 import 'debug_logger.dart';
@@ -64,6 +64,60 @@ class DetectionController extends ChangeNotifier {
     return _keywords.isGambling(url);
   }
 
+  bool _shouldBlockWholeSite(
+    String url,
+    String title,
+    String content,
+    int score, {
+    double aiConfidence = 0.0,
+    List<String> selectors = const [],
+  }) {
+    final lower = '$title\n$content'.toLowerCase();
+
+    int gameTypeHits = 0;
+    for (final term in _keywords.gameTypes) {
+      if (lower.contains(term.toLowerCase())) {
+        gameTypeHits++;
+      }
+    }
+
+    int financialHits = 0;
+    for (final term in _keywords.financialTerms) {
+      if (lower.contains(term.toLowerCase())) {
+        financialHits++;
+      }
+    }
+
+    int genericHits = 0;
+    for (final term in _keywords.genericGamblingSignals) {
+      if (lower.contains(term.toLowerCase())) {
+        genericHits++;
+      }
+    }
+
+    int urlHits = 0;
+    final urlLower = url.toLowerCase();
+    for (final term in _keywords.urlIndicators) {
+      if (urlLower.contains(term.toLowerCase())) {
+        urlHits++;
+      }
+    }
+
+    final looksLikeWholeSite =
+        score >= 10 ||
+        (score >= 8 && gameTypeHits >= 3) ||
+        (gameTypeHits >= 4 && financialHits >= 1) ||
+        (genericHits >= 2 && financialHits >= 1 && score >= 7) ||
+        (aiConfidence >= 0.9 && score >= 7 && selectors.length <= 2) ||
+        (urlHits >= 2 && gameTypeHits >= 3 && score >= 7);
+
+    _log(
+      '🧭 Whole-site check: score=$score gameTypes=$gameTypeHits financial=$financialHits generic=$genericHits urlHits=$urlHits selectors=${selectors.length} aiConfidence=${aiConfidence.toStringAsFixed(2)} => ${looksLikeWholeSite ? "block" : "sanitize"}',
+    );
+
+    return looksLikeWholeSite;
+  }
+
   /// ══════════════════════════════════════════════════════════════════════
   /// checkUrl — 4-Layer Detection → คืน DetectionResult
   /// ══════════════════════════════════════════════════════════════════════
@@ -72,34 +126,41 @@ class DetectionController extends ChangeNotifier {
     String title = '',
     String snippet = '',
     Future<Uint8List?> Function()? captureScreenshot,
+    bool forceAiRefresh = false,
   }) async {
     final domain = extractDomain(url);
 
-    // ─── Layer 1: Smart Cache ───
-    final cached = await ClassificationCache.getCachedResult(domain);
-    if (cached != null) {
-      _log(
-        cached.isGambling
-            ? '⚡ Cache: $domain → Gambling (${(cached.confidence * 100).toInt()}%)'
-            : '⚡ Cache: $domain → Safe',
-      );
-      return DetectionResult(
-        verdict: cached.isGambling
-            ? DetectionVerdict.blocked
-            : DetectionVerdict.safe,
-        reason: cached.reason,
-        layer: 'Cache',
-      );
+    // ─── Layer 1: Smart Cache (Hive) ───
+    if (!forceAiRefresh) {
+      final cached = AdRemovalCache.getCache(domain);
+      if (cached != null) {
+        if (cached.isGambling && cached.selectors.isEmpty) {
+          _log('⚠️ Hive Cache: $domain → gambling-only cache without selectors, re-evaluating live');
+        } else {
+        _log(
+          cached.isGambling
+              ? '⚡ Hive Cache: $domain → Gambling'
+              : '⚡ Hive Cache: $domain → Safe (Injecting ${cached.selectors.length} selectors)',
+        );
+        return DetectionResult(
+          verdict: cached.isGambling
+              ? DetectionVerdict.sanitize
+              : DetectionVerdict.safe,
+          reason: 'Hive Cache (selectors: ${cached.selectors.length})',
+          layer: 'Cache',
+          selectors: cached.selectors,
+        );
+        }
+      }
     }
 
     // ─── Layer 2: Pre-filter (gambling_keywords.json) ───
     if (isDefinitelyGambling(url)) {
       _log('🚫 Pre-filter: $domain → Known gambling brand');
-      await ClassificationCache.cacheResult(
-        domain,
-        true,
-        1.0,
-        'Known gambling brand (pre-filter)',
+      await AdRemovalCache.saveCache(
+        domain: domain,
+        selectors: [],
+        isGambling: true,
       );
       return const DetectionResult(
         verdict: DetectionVerdict.blocked,
@@ -132,21 +193,34 @@ class DetectionController extends ChangeNotifier {
 
       final combinedContent = '$snippet\nOCR_TEXT: $ocrText';
       final score = scoreContent(url, title, combinedContent);
-      _log('📊 Hybrid Score: $score (threshold: ≥4 block, 1-3 gray zone)');
+      _log('📊 Hybrid Score: $score (threshold: ≥4 sanitize, 1-3 gray zone)');
 
       if (score >= 4) {
-        _log('🚫 Hybrid: $domain → Gambling (score=$score, ชัดเจน)');
+        final shouldBlockWholeSite = _shouldBlockWholeSite(
+          url,
+          title,
+          combinedContent,
+          score,
+        );
+        _log(
+          shouldBlockWholeSite
+              ? '🚫 Hybrid: $domain → whole-site gambling detected (score=$score, block page)'
+              : '🧹 Hybrid: $domain → gambling-like content (score=$score, sanitize page)',
+        );
         _isAnalyzing = false;
         notifyListeners();
-        await ClassificationCache.cacheResult(
-          domain,
-          true,
-          0.9,
-          'Hybrid: local score $score (OCR+Deep)',
+        await AdRemovalCache.saveCache(
+          domain: domain,
+          selectors: [],
+          isGambling: true,
         );
         return DetectionResult(
-          verdict: DetectionVerdict.blocked,
-          reason: 'Hybrid: local score $score',
+          verdict: shouldBlockWholeSite
+              ? DetectionVerdict.blocked
+              : DetectionVerdict.sanitize,
+          reason: shouldBlockWholeSite
+              ? 'Hybrid block: whole-site gambling score $score'
+              : 'Hybrid sanitize: local score $score',
           layer: 'Local Scoring',
         );
       }
@@ -165,30 +239,45 @@ class DetectionController extends ChangeNotifier {
           final visionResult = await _geminiService!.classifyScreenshot(
             screenshotBytes: screenshot,
             url: url,
-            extractedContent: combinedContent,
+            pageTitle: title,
+            domContent: snippet,
+            ocrContent: ocrText,
           );
           if (visionResult != null) {
             _isAnalyzing = false;
             notifyListeners();
             final isGambling =
                 visionResult.isGambling && visionResult.confidence >= 0.7;
-            await ClassificationCache.cacheResult(
-              domain,
-              isGambling,
-              visionResult.confidence,
-              'Hybrid→Vision: ${visionResult.reason}',
+            await AdRemovalCache.saveCache(
+              domain: domain,
+              selectors: visionResult.semanticSelectors,
+              isGambling: isGambling,
             );
             _log(
               isGambling
-                  ? '🤖 Vision AI: $domain → Gambling (${(visionResult.confidence * 100).toInt()}%)'
+                  ? '🤖 Vision AI: $domain → Gambling-like content (${(visionResult.confidence * 100).toInt()}%)'
                   : '🤖 Vision AI: $domain → Safe (${((1 - visionResult.confidence) * 100).toInt()}%)',
             );
+            final shouldBlockWholeSite = isGambling &&
+                _shouldBlockWholeSite(
+                  url,
+                  title,
+                  combinedContent,
+                  score,
+                  aiConfidence: visionResult.confidence,
+                  selectors: visionResult.semanticSelectors,
+                );
             return DetectionResult(
-              verdict: isGambling
-                  ? DetectionVerdict.blocked
-                  : DetectionVerdict.safe,
-              reason: 'Vision: ${visionResult.reason}',
+              verdict: !isGambling
+                  ? DetectionVerdict.safe
+                  : shouldBlockWholeSite
+                      ? DetectionVerdict.blocked
+                      : DetectionVerdict.sanitize,
+              reason: shouldBlockWholeSite
+                  ? 'Vision block: ${visionResult.reason}'
+                  : 'Vision: ${visionResult.reason}',
               layer: 'Gemini Vision AI',
+              selectors: visionResult.semanticSelectors,
             );
           }
         }
@@ -198,30 +287,44 @@ class DetectionController extends ChangeNotifier {
         final textResult = await _geminiService!.classifyUrl(
           url: url,
           pageTitle: title,
-          contentSnippet: combinedContent,
+          domContent: snippet,
+          ocrContent: ocrText,
         );
         _isAnalyzing = false;
         notifyListeners();
         if (textResult != null) {
           final isGambling =
               textResult.isGambling && textResult.confidence >= 0.7;
-          await ClassificationCache.cacheResult(
-            domain,
-            isGambling,
-            textResult.confidence,
-            'Hybrid→Text: ${textResult.reason}',
+          await AdRemovalCache.saveCache(
+            domain: domain,
+            selectors: textResult.semanticSelectors,
+            isGambling: isGambling,
           );
           _log(
             isGambling
-                ? '🤖 Text AI: $domain → Gambling (${(textResult.confidence * 100).toInt()}%)'
+                ? '🤖 Text AI: $domain → Gambling-like content (${(textResult.confidence * 100).toInt()}%)'
                 : '🤖 Text AI: $domain → Safe (${((1 - textResult.confidence) * 100).toInt()}%)',
           );
+          final shouldBlockWholeSite = isGambling &&
+              _shouldBlockWholeSite(
+                url,
+                title,
+                combinedContent,
+                score,
+                aiConfidence: textResult.confidence,
+                selectors: textResult.semanticSelectors,
+              );
           return DetectionResult(
-            verdict: isGambling
-                ? DetectionVerdict.blocked
-                : DetectionVerdict.safe,
-            reason: 'Text AI: ${textResult.reason}',
+            verdict: !isGambling
+                ? DetectionVerdict.safe
+                : shouldBlockWholeSite
+                    ? DetectionVerdict.blocked
+                    : DetectionVerdict.sanitize,
+            reason: shouldBlockWholeSite
+                ? 'Text block: ${textResult.reason}'
+                : 'Text AI: ${textResult.reason}',
             layer: 'Gemini Text AI',
+            selectors: textResult.semanticSelectors,
           );
         }
       }
@@ -230,22 +333,29 @@ class DetectionController extends ChangeNotifier {
       _isAnalyzing = false;
       notifyListeners();
       final isGambling = score >= 3;
+      final shouldBlockWholeSite = isGambling &&
+          _shouldBlockWholeSite(url, title, combinedContent, score);
       _log(
         isGambling
             ? '🔎 Local fallback: $domain → Gambling (score=$score ≥ 3)'
             : '🔎 Local fallback: $domain → Safe (score=$score < 3)',
       );
       if (isGambling) {
-        await ClassificationCache.cacheResult(
-          domain,
-          true,
-          0.85,
-          'Local fallback: score $score',
+        await AdRemovalCache.saveCache(
+          domain: domain,
+          selectors: [],
+          isGambling: true,
         );
       }
       return DetectionResult(
-        verdict: isGambling ? DetectionVerdict.blocked : DetectionVerdict.safe,
-        reason: 'Local fallback: score $score',
+        verdict: !isGambling
+            ? DetectionVerdict.safe
+            : shouldBlockWholeSite
+                ? DetectionVerdict.blocked
+                : DetectionVerdict.sanitize,
+        reason: shouldBlockWholeSite
+            ? 'Local fallback block: score $score'
+            : 'Local fallback: score $score',
         layer: 'Local Scoring',
       );
     } catch (e) {
@@ -254,18 +364,25 @@ class DetectionController extends ChangeNotifier {
       _log('⚠️ Hybrid Error: $e → local fallback');
       final score = scoreContent(url, title, snippet);
       final isGambling = score >= 3;
+      final shouldBlockWholeSite = isGambling &&
+          _shouldBlockWholeSite(url, title, snippet, score);
       if (isGambling) {
         _log('🔎 Local Analysis: $domain → Gambling');
-        await ClassificationCache.cacheResult(
-          domain,
-          true,
-          0.85,
-          'Local: gambling patterns detected',
+        await AdRemovalCache.saveCache(
+          domain: domain,
+          selectors: [],
+          isGambling: true,
         );
       }
       return DetectionResult(
-        verdict: isGambling ? DetectionVerdict.blocked : DetectionVerdict.safe,
-        reason: 'Error fallback: score $score',
+        verdict: !isGambling
+            ? DetectionVerdict.safe
+            : shouldBlockWholeSite
+                ? DetectionVerdict.blocked
+                : DetectionVerdict.sanitize,
+        reason: shouldBlockWholeSite
+            ? 'Error fallback block: score $score'
+            : 'Error fallback: score $score',
         layer: 'Local Scoring (error)',
       );
     }

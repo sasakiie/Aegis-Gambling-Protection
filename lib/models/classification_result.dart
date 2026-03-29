@@ -42,25 +42,29 @@ class GeminiClassification {
   final bool isGambling;
   final double confidence;
   final String reason;
+  final List<String> semanticSelectors;
 
   GeminiClassification({
     required this.isGambling,
     required this.confidence,
     required this.reason,
+    this.semanticSelectors = const [],
   });
 }
 
 /// ผลการตรวจจับจาก DetectionController
-enum DetectionVerdict { safe, blocked, analyzing }
+enum DetectionVerdict { safe, sanitize, blocked, analyzing }
 
 class DetectionResult {
   final DetectionVerdict verdict;
   final String reason;
   final String layer;
+  final List<String> selectors;
 
   const DetectionResult({
     required this.verdict,
     required this.reason,
     required this.layer,
+    this.selectors = const [],
   });
 }

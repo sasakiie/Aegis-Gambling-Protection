@@ -8,17 +8,21 @@
 // แก้ช่องโหว่ #4: Detection คืน DetectionVerdict → View ตัดสิน Navigation
 // ============================================================================
 
-import 'dart:typed_data';
+import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../controllers/app_config.dart';
 import '../../controllers/detection_controller.dart';
 import '../../controllers/script_injection_controller.dart';
+import '../../controllers/ad_removal_cache.dart';
 import '../../controllers/ocr_service.dart';
+import '../../controllers/report_service.dart';
 
 import '../../models/classification_result.dart';
+import '../../models/phase_b_models.dart';
 
 /// WebViewScreen — เบราว์เซอร์ภายในแอป AEGIS
 class WebViewScreen extends StatefulWidget {
@@ -42,6 +46,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
   // ─── Controllers (MVC) ───
   final DetectionController _detectionCtrl = DetectionController();
   final ScriptInjectionController _scriptCtrl = ScriptInjectionController();
+  final ReportService _reportService = ReportService();
+  final Set<String> _submittedReportDomains = <String>{};
 
   // ─── UI State ───
   bool _isLoading = false;
@@ -152,7 +158,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   void _initControllers() {
     // DetectionController — ตั้งค่า Gemini + logging
-    final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+    final apiKey = AppConfig.geminiApiKey;
     _detectionCtrl.initGeminiService(apiKey, logCallback: widget.onLog);
 
     // DetectionController — ฟัง isAnalyzing state
@@ -275,6 +281,17 @@ class _WebViewScreenState extends State<WebViewScreen> {
               if (result.verdict == DetectionVerdict.blocked) {
                 _showBlockedPage(url, reason: result.reason);
                 return;
+              } else if (result.verdict == DetectionVerdict.sanitize) {
+                widget.onLog('🧹 Suspicious page allowed: removing gambling content instead of blocking');
+                if (result.selectors.isNotEmpty) {
+                  widget.onLog('💉 Injecting ${result.selectors.length} AI selectors...');
+                  final js = _scriptCtrl.getDynamicSelectorsJs(result.selectors);
+                  await _controller.runJavaScript(js);
+                }
+              } else if (result.selectors.isNotEmpty) {
+                widget.onLog('💉 Injecting ${result.selectors.length} cached selectors...');
+                final js = _scriptCtrl.getDynamicSelectorsJs(result.selectors);
+                await _controller.runJavaScript(js);
               }
             }
 
@@ -292,12 +309,50 @@ class _WebViewScreenState extends State<WebViewScreen> {
         'AegisLogger',
         onMessageReceived: (message) {
           widget.onLog(message.message);
+          _handlePotentialCommunityReport(message.message);
         },
       )
       ..addJavaScriptChannel(
         'AegisAdBlock',
         onMessageReceived: (message) {
           widget.onLog(message.message);
+        },
+      )
+      ..addJavaScriptChannel(
+        'AegisCacheMiss',
+        onMessageReceived: (message) async {
+          final removed = int.tryParse(message.message) ?? 0;
+          if (removed == 0) {
+            widget.onLog('⚠️ Cache Miss: 0 elements removed. AI is out of date / website updated.');
+            final currentUrl = await _controller.currentUrl() ?? '';
+            final domain = _extractDomain(currentUrl);
+            final stopAi = await AdRemovalCache.reportCacheMiss(domain);
+            
+            if (!stopAi) {
+               widget.onLog('🤖 Fallback: Re-triggering Gemini AI Analysis for new DOM...');
+               final result = await _detectionCtrl.checkUrl(
+                 currentUrl,
+                 forceAiRefresh: true,
+                 captureScreenshot: _captureScreenshot,
+               );
+               if (result.verdict == DetectionVerdict.blocked) {
+                 _showBlockedPage(currentUrl, reason: result.reason);
+               } else if (result.verdict == DetectionVerdict.sanitize) {
+                 widget.onLog('🧹 Refreshed detection: sanitize page instead of blocking');
+                 if (result.selectors.isNotEmpty) {
+                   final js = _scriptCtrl.getDynamicSelectorsJs(result.selectors);
+                   await _controller.runJavaScript(js);
+                 }
+               } else if (result.selectors.isNotEmpty) {
+                 final js = _scriptCtrl.getDynamicSelectorsJs(result.selectors);
+                 await _controller.runJavaScript(js);
+               }
+            } else {
+               widget.onLog('📛 Miss count limit reached. Stopping AI to prevent infinite loops.');
+            }
+          } else {
+            widget.onLog('🧹 Cache Hit: $removed elements successfully removed via CSS Selector.');
+          }
         },
       )
       ..loadHtmlString(_demoHtml);
@@ -309,6 +364,74 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   String _extractDomain(String url) {
     return _detectionCtrl.extractDomain(url);
+  }
+
+  Future<void> _handlePotentialCommunityReport(String message) async {
+    final lower = message.toLowerCase();
+    final hasRemoved = lower.contains('removed');
+    final hasGambling = lower.contains('gambling');
+
+    _reportDebug(
+      'received jsLog="$message" hasRemoved=$hasRemoved hasGambling=$hasGambling',
+    );
+
+    if (!hasRemoved || !hasGambling) {
+      _reportDebug('skip report because jsLog does not match community-report pattern');
+      return;
+    }
+
+    final currentUrl = await _controller.currentUrl() ?? '';
+    if (currentUrl.isEmpty ||
+        currentUrl.startsWith('data:') ||
+        currentUrl.startsWith('about:')) {
+      _reportDebug('skip report because currentUrl is not reportable: $currentUrl');
+      return;
+    }
+
+    final domain = _extractDomain(currentUrl);
+    if (domain.isEmpty || _submittedReportDomains.contains(domain)) {
+      _reportDebug(
+        'skip report currentUrl=$currentUrl domain=$domain alreadySubmitted=${_submittedReportDomains.contains(domain)}',
+      );
+      return;
+    }
+
+    _submittedReportDomains.add(domain);
+    _reportDebug(
+      'submitting community report for domain=$domain url=$currentUrl message=$message',
+    );
+    widget.onLog('📤 Attempting community report for $domain');
+
+    final result = await _reportService.submitReport(
+      ReportDraft(
+        domain: domain,
+        selectors: const [],
+        isGambling: true,
+        reason: message,
+        reportType: ReportType.adSelector,
+        clientVersion: 'aegis_shield_v3',
+      ),
+    );
+
+    if (result.isSuccess) {
+      _reportDebug('community report success for domain=$domain');
+      widget.onLog('📤 Community report submitted for $domain');
+      return;
+    }
+
+    _submittedReportDomains.remove(domain);
+    _reportDebug(
+      'community report failed for domain=$domain: ${result.failure?.message ?? "unknown"}',
+    );
+    widget.onLog(
+      '⚠️ Community report failed for $domain: '
+      '${result.failure?.message ?? "unknown"}',
+    );
+  }
+
+  void _reportDebug(String message) {
+    developer.log(message, name: 'CommunityReport');
+    debugPrint('[CommunityReport] $message');
   }
 
   void _showBlockedPage(String url, {String reason = ''}) {

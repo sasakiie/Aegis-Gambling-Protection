@@ -22,6 +22,7 @@ class TestKeywordLoader {
   final List<String> brands;
   final List<RegExp> compiledPatterns;
   final List<String> urlIndicators;
+  final List<String> normalizedBrands;
 
   TestKeywordLoader({
     required this.brands,
@@ -36,24 +37,46 @@ class TestKeywordLoader {
               }
             })
             .whereType<RegExp>()
+            .toList(),
+        normalizedBrands = brands
+            .map((b) => b.toLowerCase().replaceAll(RegExp(r'[\s\-_]'), ''))
             .toList();
 
   /// ตรวจว่า URL ตรงกับ gambling brand/pattern หรือไม่
   /// (Logic เดียวกับ KeywordLoader.isGambling())
   bool isGambling(String url) {
     final lower = url.toLowerCase();
+    final host = _extractHost(lower);
+    final normalized = lower.replaceAll(RegExp(r'[\s\-_]'), '');
+    final normalizedHost = host.replaceAll(RegExp(r'[\s\-_]'), '');
 
     // เช็ค exact brand match
     for (final brand in brands) {
       if (lower.contains(brand)) return true;
+      if (host.contains(brand)) return true;
+    }
+    for (final brand in normalizedBrands) {
+      if (brand.isNotEmpty && normalized.contains(brand)) return true;
+      if (brand.isNotEmpty && normalizedHost.contains(brand)) return true;
     }
 
     // เช็ค regex patterns
     for (final pattern in compiledPatterns) {
+      if (pattern.hasMatch(host)) return true;
+      if (pattern.hasMatch(normalizedHost)) return true;
       if (pattern.hasMatch(lower)) return true;
+      if (pattern.hasMatch(normalized)) return true;
     }
 
     return false;
+  }
+
+  String _extractHost(String url) {
+    try {
+      return Uri.parse(url).host.toLowerCase();
+    } catch (_) {
+      return url.toLowerCase();
+    }
   }
 }
 
@@ -68,7 +91,7 @@ final _testLoader = TestKeywordLoader(
     'pgslot', 'pgsoft',
     'betflik', 'betflix', 'betflip',
     'joker123', 'jokergaming',
-    'sexybaccarat', 'sexygame', 'sexygame1688',
+    'sexybaccarat', 'sexygame', 'sexy gaming', 'sexygame1688',
     'sagaming', 'sagame', 'sagame1688',
     'slotxo', 'slotgame', 'slotgame66', 'slotgame666', 'slotgame6666',
     'superslot',
@@ -114,6 +137,14 @@ final _testLoader = TestKeywordLoader(
     r'foxz\d+',
     r'(?:slot|bet|game|play|win|vip|pro|club)[\-_]?\d{2,}',
     r'\d{2,}(?:slot|bet|game|casino|play)',
+    r'(?:^|\.)888[a-z]?\.(?:com|net|bet|co|tv|pro|win)',
+    r'\d+win\.(?:com|net|pro|vip|bet|co|win)',
+    r'\d+[a-z]?bet\.(?:com|net|pro|vip|co|win)',
+    r'\d+lottery\.(?:com|net|pro|vip)',
+    r'casino\d+\.(?:com|net|pro|vip|win)',
+    r'[a-z]{2,5}88\.(?:com|net|co|vip|club|win|pro)',
+    r'[a-z]{2,5}789\.(?:com|net|co|club|vip)',
+    r'[a-z]{1,4}\d{2,3}\.(?:club|win|vin|vip|asia|social|cc|fun)',
   ],
   urlIndicators: [
     'slot', 'bet', 'casino', 'ufa', 'sbo', 'joker', '888', '168',

@@ -1,8 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:aegis_prog/main.dart';
 import 'package:aegis_prog/controllers/dashboard_controller.dart';
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    dotenv.testLoad(fileInput: 'GEMINI_API_KEY=test-key-mock');
+  });
+
   testWidgets('AEGIS Dashboard renders correctly', (WidgetTester tester) async {
     final controller = DashboardController();
     await tester.pumpWidget(AegisApp(dashboardController: controller));
