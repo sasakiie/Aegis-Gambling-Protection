@@ -36,36 +36,6 @@ class PhaseBResult<T> {
       PhaseBResult._(failure: failure);
 }
 
-class PhaseBAuthSession {
-  final String userId;
-  final String token;
-  final DateTime authenticatedAt;
-
-  const PhaseBAuthSession({
-    required this.userId,
-    required this.token,
-    required this.authenticatedAt,
-  });
-}
-
-class PhaseBStatusSnapshot {
-  final String baseUrl;
-  final PhaseBAvailability availability;
-  final bool reportAvailable;
-  final bool syncAvailable;
-  final DateTime? lastSyncedAt;
-  final String message;
-
-  const PhaseBStatusSnapshot({
-    required this.baseUrl,
-    required this.availability,
-    required this.reportAvailable,
-    required this.syncAvailable,
-    required this.message,
-    this.lastSyncedAt,
-  });
-}
-
 class ReportDraft {
   final String domain;
   final List<String> selectors;
@@ -90,6 +60,7 @@ class ReportDraft {
         'reason': reason,
         'report_type': _reportTypeValue(reportType),
         'client_version': clientVersion,
+        'status': 'pending',
       };
 
   static String _reportTypeValue(ReportType type) {

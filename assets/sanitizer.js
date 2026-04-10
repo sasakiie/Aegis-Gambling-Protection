@@ -157,6 +157,43 @@
         console.log('[AEGIS] ' + msg);
     }
 
+    function isCoexistMode() {
+        try {
+            return !!(window._aegisConfig && window._aegisConfig.adBlockEnabled);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function shouldPreserveContainer(el) {
+        if (!el || !el.tagName) return true;
+        if (el === document.body || el === document.documentElement) return true;
+
+        try {
+            var tag = el.tagName.toUpperCase();
+            if (tag === 'BODY' || tag === 'HTML' || tag === 'MAIN' ||
+                tag === 'ARTICLE' || tag === 'SECTION' || tag === 'HEADER' ||
+                tag === 'FOOTER' || tag === 'NAV') {
+                return true;
+            }
+
+            var text = (el.textContent || '').trim();
+            var childCount = el.querySelectorAll ? el.querySelectorAll('*').length : 0;
+            if (text.length > 500 || childCount > 30) return true;
+
+            var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+            if (rect) {
+                var vpArea = Math.max(window.innerWidth * window.innerHeight, 1);
+                var coverage = (rect.width * rect.height) / vpArea;
+                if (coverage > 0.60 && (text.length > 120 || childCount > 12)) {
+                    return true;
+                }
+            }
+        } catch (e) { }
+
+        return false;
+    }
+
     /**
      * extractPathName — ดึงชื่อไฟล์/path สุดท้ายจาก URL
      * Logic:
@@ -313,6 +350,15 @@
      * เอาไว้: function กลางสำหรับลบ element ทุกชนิด
      */
     function removeEl(el, reason) {
+        if (!el || !el.parentNode) return false;
+        if (shouldPreserveContainer(el)) {
+            markScanned(el);
+            log('\u26A0\uFE0F Preserve container: <' +
+                (el.tagName ? el.tagName.toLowerCase() : '?') +
+                '> \u2014 ' + reason);
+            return false;
+        }
+
         var tag = el.tagName ? el.tagName.toLowerCase() : '?';
         var href = '';
         try { href = el.getAttribute('href') || ''; } catch (e) { }
@@ -435,6 +481,10 @@
         var text = (el.textContent || '').trim();
         var childCount = 0;
         try { childCount = el.querySelectorAll('*').length; } catch (e) { }
+
+        if (isCoexistMode()) {
+            if (text.length > 120 || childCount > 8) return false;
+        }
 
         // ข้าม container ใหญ่ (เนื้อหาหลักของหน้าเว็บ)
         if (text.length > 300 && childCount > 15) return false;
@@ -563,7 +613,7 @@
             }
 
             // Full-screen overlay backdrop (ครอบคลุม > 70% + semi-transparent)
-            if (coverage > 0.7 && zIndex >= 100) {
+            if (!isCoexistMode() && coverage > 0.7 && zIndex >= 100) {
                 var bg = style.getPropertyValue('background-color') || '';
                 var opacity = parseFloat(style.getPropertyValue('opacity') || '1');
                 // ถ้าเป็น backdrop (พื้นหลังมืด/โปร่งใส) ที่ block content → ลบ

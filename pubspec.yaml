@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   webview_flutter: ^4.10.0
   http: ^1.2.0
+  pocketbase:
+    git:
+      url: https://github.com/pocketbase/dart-sdk.git
   shared_preferences: ^2.3.0
   flutter_dotenv: ^5.2.1
   google_mlkit_text_recognition: ^0.15.1
@@ -72,6 +75,7 @@ flutter:
     - assets/sanitizer.js
     - assets/adblocker.js
     - assets/gambling_keywords.json
+    - assets/aegis_logo.svg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

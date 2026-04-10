@@ -16,6 +16,8 @@ class KeywordLoader {
 
   List<String> brands = [];
   List<String> thaiKeywords = [];
+  List<String> thaiTitleMetaStrong = [];
+  List<String> thaiTitleMetaMedium = [];
   List<String> urlRegexPatterns = [];
   List<String> gameProviders = [];
   List<String> gameTypes = [];
@@ -39,6 +41,12 @@ class KeywordLoader {
 
       brands = List<String>.from(data['brands'] ?? []);
       thaiKeywords = List<String>.from(data['thai_keywords'] ?? []);
+      thaiTitleMetaStrong = List<String>.from(
+        data['thai_title_meta_strong'] ?? [],
+      );
+      thaiTitleMetaMedium = List<String>.from(
+        data['thai_title_meta_medium'] ?? [],
+      );
       urlRegexPatterns = List<String>.from(data['url_regex_patterns'] ?? []);
       gameProviders = List<String>.from(data['game_providers'] ?? []);
       gameTypes = List<String>.from(data['game_types'] ?? []);

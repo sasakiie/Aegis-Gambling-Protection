@@ -34,6 +34,43 @@
         console.log('[AEGIS-AD] ' + msg);
     }
 
+    function isCoexistMode() {
+        try {
+            return !!(window._aegisConfig && window._aegisConfig.gamblingProtectionEnabled);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function shouldPreserveContentContainer(el) {
+        if (!el || !el.tagName) return true;
+        if (el === document.body || el === document.documentElement) return true;
+
+        try {
+            var tag = el.tagName.toUpperCase();
+            if (tag === 'BODY' || tag === 'HTML' || tag === 'MAIN' ||
+                tag === 'ARTICLE' || tag === 'SECTION' || tag === 'HEADER' ||
+                tag === 'FOOTER' || tag === 'NAV') {
+                return true;
+            }
+
+            var text = (el.textContent || '').trim();
+            var childCount = el.querySelectorAll ? el.querySelectorAll('*').length : 0;
+            if (text.length > 500 || childCount > 30) return true;
+
+            var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+            if (rect) {
+                var vpArea = Math.max(window.innerWidth * window.innerHeight, 1);
+                var coverage = (rect.width * rect.height) / vpArea;
+                if (coverage > 0.60 && (text.length > 120 || childCount > 12)) {
+                    return true;
+                }
+            }
+        } catch (e) { }
+
+        return false;
+    }
+
     // ════════ Layer 1: CSS Injection ════════
     // ซ่อน ad containers ทันทีด้วย CSS → ไม่ต้องรอ DOM scan
     // ───────────────────────────────────────────────────────────
@@ -42,8 +79,8 @@
         if (document.getElementById('aegis-adblock-css')) return;
 
         var style = document.createElement('style');
-        style.id = 'aegis-adblock-css';
-        style.textContent = [
+        var coexistMode = isCoexistMode();
+        var cssRules = [
             // ─── Google Ads / DFP / GPT ───
             'ins.adsbygoogle { display: none !important; }',
             '[id^="google_ads_"] { display: none !important; }',
@@ -58,24 +95,6 @@
             '[data-google-query-id] { display: none !important; }',
             '.cbb, #cbb { display: none !important; }',       // Google Ads close button
             '.abgl, #abgl { display: none !important; }',     // AdChoices icon
-
-            // ─── Common Ad Classes/IDs ───
-            '.ad-banner { display: none !important; }',
-            '.ad-container { display: none !important; }',
-            '.ad-wrapper { display: none !important; }',
-            '.ad-slot { display: none !important; }',
-            '.ad-unit { display: none !important; }',
-            '.ad-block { display: none !important; }',
-            '.ad-placement { display: none !important; }',
-            '.advertisement { display: none !important; }',
-            '.ad-box { display: none !important; }',
-            '#ad-container { display: none !important; }',
-            '#ad-banner { display: none !important; }',
-            '#ad-wrapper { display: none !important; }',
-            '[class*="ad-leaderboard"] { display: none !important; }',
-            '[class*="ad-sidebar"] { display: none !important; }',
-            '[class*="ad-footer"] { display: none !important; }',
-            '[class*="ad-header"] { display: none !important; }',
 
             // ─── Taboola / Outbrain / Mgid (Native Ads) ───
             '[id^="taboola-"] { display: none !important; }',
@@ -102,12 +121,6 @@
             '[data-type="ad"] { display: none !important; }',
             'article[data-ad] { display: none !important; }',
 
-            // ─── Video Ads ───
-            '[class*="video-ad"] { display: none !important; }',
-            '[id*="player-ads"] { display: none !important; }',
-            '[class*="preroll"] { display: none !important; }',
-            '[class*="midroll"] { display: none !important; }',
-
             // ─── Popup / Overlay / Notification Ads ───
             '[class*="ad-overlay"] { display: none !important; }',
             '[class*="ad-modal"] { display: none !important; }',
@@ -119,23 +132,47 @@
 
             // ─── Cookie Consent Banners ───
             '.closecookie { display: none !important; }',
-            '[class*="cookie-banner"] { display: none !important; }',
-            '[class*="cookie-consent"] { display: none !important; }',
             '[id*="cookie-consent"] { display: none !important; }',
             '[id*="cookie-banner"] { display: none !important; }',
-            '[class*="gdpr-banner"] { display: none !important; }',
+        ];
 
-            // ─── Discover / Recommended Ads ───
-            '[class*="discover-more"] { display: none !important; }',
-            '[class*="recommended-ads"] { display: none !important; }',
-            '[class*="content-recommendation"] { display: none !important; }',
+        if (!coexistMode) {
+            cssRules = cssRules.concat([
+                '.ad-banner { display: none !important; }',
+                '.ad-container { display: none !important; }',
+                '.ad-wrapper { display: none !important; }',
+                '.ad-slot { display: none !important; }',
+                '.ad-unit { display: none !important; }',
+                '.ad-block { display: none !important; }',
+                '.ad-placement { display: none !important; }',
+                '.advertisement { display: none !important; }',
+                '.ad-box { display: none !important; }',
+                '#ad-container { display: none !important; }',
+                '#ad-banner { display: none !important; }',
+                '#ad-wrapper { display: none !important; }',
+                '[class*="ad-leaderboard"] { display: none !important; }',
+                '[class*="ad-sidebar"] { display: none !important; }',
+                '[class*="ad-footer"] { display: none !important; }',
+                '[class*="ad-header"] { display: none !important; }',
+                '[class*="video-ad"] { display: none !important; }',
+                '[id*="player-ads"] { display: none !important; }',
+                '[class*="preroll"] { display: none !important; }',
+                '[class*="midroll"] { display: none !important; }',
+                '[class*="cookie-banner"] { display: none !important; }',
+                '[class*="cookie-consent"] { display: none !important; }',
+                '[class*="gdpr-banner"] { display: none !important; }',
+                '[class*="discover-more"] { display: none !important; }',
+                '[class*="recommended-ads"] { display: none !important; }',
+                '[class*="content-recommendation"] { display: none !important; }',
+                '[class*="sticky-ad"] { display: none !important; }',
+                '[class*="fixed-ad"] { display: none !important; }',
+                '[class*="bottom-ad"] { display: none !important; }',
+                '[class*="top-ad"] { display: none !important; }',
+            ]);
+        }
 
-            // ─── Sticky / Fixed Ads ───
-            '[class*="sticky-ad"] { display: none !important; }',
-            '[class*="fixed-ad"] { display: none !important; }',
-            '[class*="bottom-ad"] { display: none !important; }',
-            '[class*="top-ad"] { display: none !important; }',
-        ].join('\n');
+        style.id = 'aegis-adblock-css';
+        style.textContent = cssRules.join('\n');
 
         // insert ที่ <head> ทันที
         if (document.head) {
@@ -143,7 +180,7 @@
         } else if (document.documentElement) {
             document.documentElement.appendChild(style);
         }
-        log('\uD83D\uDEE1\uFE0F CSS ad-block rules injected (' + style.textContent.split('\n').length + ' rules)');
+        log('\uD83D\uDEE1\uFE0F CSS ad-block rules injected (' + style.textContent.split('\n').length + ' rules' + (coexistMode ? ', coexist-safe mode' : '') + ')');
     }
 
     // ════════ Layer 2: DOM Removal ════════
@@ -224,6 +261,39 @@
         '[id*="cookie-banner"]',
     ];
 
+    var COEXIST_SAFE_SELECTORS = [
+        'ins.adsbygoogle',
+        '[id^="google_ads_"]',
+        '[id^="div-gpt-ad"]',
+        '[data-ad-slot]',
+        '[data-ad-client]',
+        '[data-google-query-id]',
+        '.cbb', '#cbb',
+        '.abgl', '#abgl',
+        '[id^="taboola-"]',
+        '.taboola-widget',
+        'div[class^="trc_"]',
+        'div[class*=" trc_"]',
+        'span[class^="trc_"]',
+        '.trc_related_container',
+        '.trc_rbox',
+        '.trc_elastic',
+        '[data-widget-id*="taboola"]',
+        'a[href*="popup.taboola.com"]',
+        '[aria-label*="Taboola"]',
+        '.branding-inner',
+        '.trc_desktop_disclosure_link',
+        '[id^="outbrain_"]',
+        '.OUTBRAIN',
+        '[id^="mgid-"]',
+        '#onesignal-slidedown-dialog-container',
+        '#onesignal-slidedown-container',
+        '.onesignal-slidedown-dialog',
+        '.closecookie',
+        '[id*="cookie-consent"]',
+        '[id*="cookie-banner"]',
+    ];
+
     // Class/ID patterns ที่บ่งบอกว่าเป็น ad container
     var AD_CLASS_PATTERNS = [
         'ad-banner', 'ad-container', 'ad-wrapper', 'ad-slot',
@@ -281,6 +351,11 @@
      */
     function removeAd(el, reason) {
         if (!el || !el.parentNode) return false;
+        if (isCoexistMode() && shouldPreserveContentContainer(el)) {
+            try { el.setAttribute('data-aegis-ad', '1'); } catch (e) { }
+            log('\u26A0\uFE0F Preserved content container \u2014 ' + reason);
+            return false;
+        }
         var tag = el.tagName ? el.tagName.toLowerCase() : '?';
         var id = '';
         try { id = el.id ? '#' + el.id : ''; } catch (e) { }
@@ -350,6 +425,12 @@
             current = parent;
         }
 
+        if (isCoexistMode() && shouldPreserveContentContainer(toRemove)) {
+            try { toRemove.setAttribute('data-aegis-ad', '1'); } catch (e) { }
+            log('\u26A0\uFE0F Parent climb stopped to preserve content \u2014 ' + reason);
+            return false;
+        }
+
         return removeAd(toRemove, reason);
     }
 
@@ -358,6 +439,8 @@
      */
     function scanForAds() {
         var removed = 0;
+        var coexistMode = isCoexistMode();
+        var selectorsToScan = coexistMode ? COEXIST_SAFE_SELECTORS : AD_SELECTORS;
 
         // Phase 1: ลบ iframes จาก ad networks (ลบแค่ iframe เอง ไม่ปีน parent)
         var iframes = document.querySelectorAll('iframe');
@@ -369,22 +452,24 @@
         }
 
         // Phase 2: ลบ ad containers ตาม CSS selectors
-        for (var s = 0; s < AD_SELECTORS.length; s++) {
+        for (var s = 0; s < selectorsToScan.length; s++) {
             try {
-                var els = document.querySelectorAll(AD_SELECTORS[s]);
+                var els = document.querySelectorAll(selectorsToScan[s]);
                 for (var j = 0; j < els.length; j++) {
                     if (isProcessed(els[j])) continue;
-                    if (climbAndRemoveAdParent(els[j], 'ad selector: ' + AD_SELECTORS[s])) removed++;
+                    if (climbAndRemoveAdParent(els[j], 'ad selector: ' + selectorsToScan[s])) removed++;
                 }
             } catch (e) { }
         }
 
         // Phase 3: ลบ elements ที่มี ad class/id patterns
-        var containers = document.querySelectorAll('div, section, aside, ins, article, span');
-        for (var k = 0; k < containers.length; k++) {
-            if (isProcessed(containers[k])) continue;
-            if (isAdElement(containers[k])) {
-                if (removeAd(containers[k], 'ad class/id pattern')) removed++;
+        if (!coexistMode) {
+            var containers = document.querySelectorAll('div, section, aside, ins, article, span');
+            for (var k = 0; k < containers.length; k++) {
+                if (isProcessed(containers[k])) continue;
+                if (isAdElement(containers[k])) {
+                    if (removeAd(containers[k], 'ad class/id pattern')) removed++;
+                }
             }
         }
 
@@ -399,6 +484,12 @@
                 allIframes[m].remove();
                 removed++;
             }
+        }
+
+        // เมื่อเปิดร่วมกับ Gambling Protection ให้หยุดแค่ explicit ad rules
+        // เพื่อลดโอกาสลบ container ใหญ่หรือเนื้อหาหลักของหน้าเว็บ
+        if (coexistMode) {
+            return removed;
         }
 
         // Phase 5: ลบ container ที่มี "Advertisement" label

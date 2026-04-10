@@ -44,7 +44,7 @@ class DebugLogger {
         '========================================================',
       ], flush: true);
     } catch (e) {
-      print('DebugLogger init failed: $e');
+      stderr.writeln('DebugLogger init failed: $e');
     }
   }
 

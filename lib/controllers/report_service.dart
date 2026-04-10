@@ -5,13 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/phase_b_models.dart';
-import 'server_auth_service.dart';
+import 'app_config.dart';
 
 class ReportService {
-  final ServerAuthService _authService;
+  String get _baseUrl => AppConfig.pocketBaseUrl.trim();
 
-  ReportService({ServerAuthService? authService})
-      : _authService = authService ?? ServerAuthService();
+  bool get isConfigured => _baseUrl.isNotEmpty;
 
   Future<PhaseBResult<void>> submitReport(ReportDraft draft) async {
     final validationFailure = _validate(draft);
@@ -22,28 +21,24 @@ class ReportService {
       return PhaseBResult.failure(validationFailure);
     }
 
-    final authResult = await _authService.ensureAuthenticated();
-    if (!authResult.isSuccess) {
-      _debug(
-        'auth failed for domain=${draft.domain}: ${authResult.failure?.message ?? "unknown"}',
+    if (!isConfigured) {
+      return PhaseBResult.failure(
+        const PhaseBFailure(
+          type: PhaseBFailureType.unavailable,
+          message: 'Community backend is not configured.',
+        ),
       );
-      return PhaseBResult.failure(authResult.failure!);
     }
 
-    final session = authResult.data!;
-    final uri =
-        Uri.parse('${_authService.baseUrl}/api/collections/reports/records');
-    final payload = draft.toJson();
+    final uri = Uri.parse('$_baseUrl/api/collections/reports/records');
+    final payload = _normalizeDraft(draft).toJson();
 
     try {
       _debug('POST $uri payload=${jsonEncode(payload)}');
 
-      var response = await http.post(
+      final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${session.token}',
-        },
+        headers: const {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
       );
 
@@ -53,36 +48,6 @@ class ReportService {
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return PhaseBResult.success(null);
-      }
-
-      if (response.statusCode == 401) {
-        final retryAuth = await _authService.ensureAuthenticated(
-          forceRefresh: true,
-        );
-        if (!retryAuth.isSuccess) {
-          _debug(
-            'retry auth failed for domain=${draft.domain}: ${retryAuth.failure?.message ?? "unknown"}',
-          );
-          return PhaseBResult.failure(retryAuth.failure!);
-        }
-
-        final retrySession = retryAuth.data!;
-        response = await http.post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${retrySession.token}',
-          },
-          body: jsonEncode(payload),
-        );
-
-        _debug(
-          'retry response status=${response.statusCode} body=${_truncate(response.body)}',
-        );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return PhaseBResult.success(null);
-        }
       }
 
       return PhaseBResult.failure(
@@ -97,6 +62,20 @@ class ReportService {
         ),
       );
     }
+  }
+
+  ReportDraft _normalizeDraft(ReportDraft draft) {
+    return ReportDraft(
+      domain: draft.domain.trim().toLowerCase(),
+      selectors: draft.selectors
+          .map((selector) => selector.trim())
+          .where((selector) => selector.isNotEmpty)
+          .toList(),
+      isGambling: draft.isGambling,
+      reason: draft.reason.trim(),
+      reportType: draft.reportType,
+      clientVersion: draft.clientVersion.trim(),
+    );
   }
 
   PhaseBFailure? _validate(ReportDraft draft) {
@@ -157,10 +136,11 @@ class ReportService {
           statusCode: 400,
         );
       case 401:
+      case 403:
         return PhaseBFailure(
           type: PhaseBFailureType.unauthorized,
-          message: serverMessage ?? 'Report session has expired.',
-          statusCode: 401,
+          message: serverMessage ?? 'Report submission is not allowed.',
+          statusCode: statusCode,
         );
       case 429:
         return PhaseBFailure(

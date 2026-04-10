@@ -5,15 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/phase_b_models.dart';
 import 'ad_removal_cache.dart';
-import 'server_auth_service.dart';
+import 'app_config.dart';
 
 class ServerSyncService {
   static const String _lastSyncedAtKey = 'phase_b.last_synced_at';
 
-  final ServerAuthService _authService;
+  String get _baseUrl => AppConfig.pocketBaseUrl.trim();
 
-  ServerSyncService({ServerAuthService? authService})
-      : _authService = authService ?? ServerAuthService();
+  bool get isConfigured => _baseUrl.isNotEmpty;
 
   Future<DateTime?> getLastSyncedAt() async {
     final prefs = await SharedPreferences.getInstance();
@@ -27,7 +26,7 @@ class ServerSyncService {
   Future<PhaseBResult<SyncSummary>> syncApprovedRules({
     bool forceFullResync = false,
   }) async {
-    if (!_authService.isConfigured) {
+    if (!isConfigured) {
       return PhaseBResult.failure(
         const PhaseBFailure(
           type: PhaseBFailureType.unavailable,
@@ -39,7 +38,7 @@ class ServerSyncService {
     final lastSyncedAt = forceFullResync ? null : await getLastSyncedAt();
     final filter = _buildFilter(lastSyncedAt);
     final uri = Uri.parse(
-      '${_authService.baseUrl}/api/collections/ad_rules/records'
+      '$_baseUrl/api/collections/ad_rules/records'
       '?filter=${Uri.encodeQueryComponent(filter)}'
       '&sort=%2Bupdated'
       '&perPage=200',

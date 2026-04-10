@@ -48,6 +48,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
   final ScriptInjectionController _scriptCtrl = ScriptInjectionController();
   final ReportService _reportService = ReportService();
   final Set<String> _submittedReportDomains = <String>{};
+  int _pageLoadVersion = 0;
 
   // ─── UI State ───
   bool _isLoading = false;
@@ -198,6 +199,11 @@ class _WebViewScreenState extends State<WebViewScreen> {
               _isBlocked = false;
               _isAnalyzing = false;
             });
+            _pageLoadVersion += 1;
+            _submittedReportDomains.clear();
+            _reportDebug(
+              'page started url=$url pageLoadVersion=$_pageLoadVersion dedupe reset',
+            );
           },
 
           // ─── ชั้นที่ 2-4: Async detection + DOM sanitizer ───
@@ -391,7 +397,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
     final domain = _extractDomain(currentUrl);
     if (domain.isEmpty || _submittedReportDomains.contains(domain)) {
       _reportDebug(
-        'skip report currentUrl=$currentUrl domain=$domain alreadySubmitted=${_submittedReportDomains.contains(domain)}',
+        'skip report currentUrl=$currentUrl domain=$domain pageLoadVersion=$_pageLoadVersion alreadySubmitted=${_submittedReportDomains.contains(domain)}',
       );
       return;
     }
@@ -453,6 +459,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
   /// ช่องโหว่ #3 แก้แล้ว: View แค่รับ String สำเร็จรูปจาก Controller
   Future<void> _injectSanitizer() async {
     try {
+      await _controller.runJavaScript(
+        'window._aegisConfig = Object.assign({}, window._aegisConfig || {}, '
+        '{ gamblingProtectionEnabled: true, adBlockEnabled: ${widget.adBlockEnabled ? 'true' : 'false'} });',
+      );
       await _controller.runJavaScript(_scriptCtrl.keywordsInjectionJs);
       await _controller.runJavaScript(_scriptCtrl.sanitizerScript);
       widget.onLog(
@@ -465,6 +475,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
   Future<void> _injectAdBlocker() async {
     try {
+      await _controller.runJavaScript(
+        'window._aegisConfig = Object.assign({}, window._aegisConfig || {}, '
+        '{ gamblingProtectionEnabled: true, adBlockEnabled: true });',
+      );
       await _controller.runJavaScript(_scriptCtrl.adblockerScript);
       widget.onLog('🛡️ Ad Blocker v2.0 injected');
 

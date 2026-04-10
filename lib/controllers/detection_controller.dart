@@ -137,19 +137,19 @@ class DetectionController extends ChangeNotifier {
         if (cached.isGambling && cached.selectors.isEmpty) {
           _log('⚠️ Hive Cache: $domain → gambling-only cache without selectors, re-evaluating live');
         } else {
-        _log(
-          cached.isGambling
-              ? '⚡ Hive Cache: $domain → Gambling'
-              : '⚡ Hive Cache: $domain → Safe (Injecting ${cached.selectors.length} selectors)',
-        );
-        return DetectionResult(
-          verdict: cached.isGambling
-              ? DetectionVerdict.sanitize
-              : DetectionVerdict.safe,
-          reason: 'Hive Cache (selectors: ${cached.selectors.length})',
-          layer: 'Cache',
-          selectors: cached.selectors,
-        );
+          _log(
+            cached.isGambling
+                ? '⚡ Hive Cache: $domain → Gambling'
+                : '⚡ Hive Cache: $domain → Safe (Injecting ${cached.selectors.length} selectors)',
+          );
+          return DetectionResult(
+            verdict: cached.isGambling
+                ? DetectionVerdict.sanitize
+                : DetectionVerdict.safe,
+            reason: 'Hive Cache (selectors: ${cached.selectors.length})',
+            layer: 'Cache',
+            selectors: cached.selectors,
+          );
         }
       }
     }
@@ -393,13 +393,41 @@ class DetectionController extends ChangeNotifier {
   /// ══════════════════════════════════════════════════════════════════════
   int scoreContent(String url, String title, String content) {
     final lower = content.toLowerCase();
+    final titleLower = title.toLowerCase();
+    final metaLower = _extractStructuredSection(content, 'META:').toLowerCase();
+    final linksLower = _extractStructuredSection(content, 'LINKS:').toLowerCase();
+    final imagesLower = _extractStructuredSection(content, 'IMAGES:').toLowerCase();
+    final titleAndMeta = '$titleLower\n$metaLower';
+    final combined = '$titleLower\n$lower';
     int score = 0;
     final List<String> matches = [];
 
-    // 1. Game providers
+    int titleMetaStrongHits = 0;
+    for (final kw in _keywords.thaiTitleMetaStrong) {
+      if (_containsNormalized(titleAndMeta, kw)) titleMetaStrongHits++;
+    }
+    int titleMetaMediumHits = 0;
+    for (final kw in _keywords.thaiTitleMetaMedium) {
+      if (_containsNormalized(titleAndMeta, kw)) titleMetaMediumHits++;
+    }
+    if (titleMetaStrongHits >= 2) {
+      score += 5;
+      matches.add('titleStrong($titleMetaStrongHits)');
+    } else if (titleMetaStrongHits == 1) {
+      score += 4;
+      matches.add('titleStrong($titleMetaStrongHits)');
+    }
+    if (titleMetaMediumHits >= 2) {
+      score += 2;
+      matches.add('titleMedium($titleMetaMediumHits)');
+    } else if (titleMetaMediumHits == 1) {
+      score += 1;
+      matches.add('titleMedium($titleMetaMediumHits)');
+    }
+
     int providerHits = 0;
     for (final p in _keywords.gameProviders) {
-      if (lower.contains(p)) providerHits++;
+      if (_containsNormalized(combined, p)) providerHits++;
     }
     if (providerHits >= 3) {
       score += 3;
@@ -409,28 +437,26 @@ class DetectionController extends ChangeNotifier {
       matches.add('providers($providerHits)');
     }
 
-    // 2. Game types
     for (final t in _keywords.gameTypes) {
-      if (lower.contains(t)) {
+      if (_containsNormalized(combined, t)) {
         score += 1;
         matches.add('type:$t');
         break;
       }
     }
 
-    // 3. Financial terms
+    int financialHits = 0;
     for (final f in _keywords.financialTerms) {
-      if (lower.contains(f)) {
-        score += 2;
-        matches.add('financial:$f');
-        break;
-      }
+      if (_containsNormalized(combined, f)) financialHits++;
+    }
+    if (financialHits >= 1) {
+      score += 2;
+      matches.add('financial($financialHits)');
     }
 
-    // 4. Thai keywords
     int thaiHits = 0;
     for (final kw in _keywords.thaiKeywords) {
-      if (content.contains(kw)) thaiHits++;
+      if (_containsNormalized(lower, kw)) thaiHits++;
     }
     if (thaiHits >= 2) {
       score += 2;
@@ -440,7 +466,6 @@ class DetectionController extends ChangeNotifier {
       matches.add('thai($thaiHits)');
     }
 
-    // 5. URL indicators
     final urlLower = url.toLowerCase();
     for (final d in _keywords.urlIndicators) {
       if (urlLower.contains(d)) {
@@ -450,20 +475,18 @@ class DetectionController extends ChangeNotifier {
       }
     }
 
-    // 6. Game names
     int gameHits = 0;
     for (final g in _keywords.gameNames) {
-      if (lower.contains(g)) gameHits++;
+      if (_containsNormalized(combined, g)) gameHits++;
     }
     if (gameHits >= 1) {
       score += 2;
       matches.add('games($gameHits)');
     }
 
-    // 7. Generic gambling signals
     int signalHits = 0;
     for (final s in _keywords.genericGamblingSignals) {
-      if (lower.contains(s)) signalHits++;
+      if (_containsNormalized(combined, s)) signalHits++;
     }
     if (signalHits >= 3) {
       score += 3;
@@ -473,7 +496,102 @@ class DetectionController extends ChangeNotifier {
       matches.add('signals($signalHits)');
     }
 
-    _log('🔎 Score detail: $score (${matches.join(", ")})');
+    final baseGamblingScore = score;
+
+    final authFormSignals = _countContainsNormalized(combined, <String>[
+      'เข้าสู่ระบบ',
+      'สมัครสมาชิก',
+      'เบอร์โทรศัพท์',
+      'รหัสผ่าน',
+      'ทางเข้าเล่น',
+    ]);
+    if (authFormSignals >= 3) {
+      score += 1;
+      matches.add('authFlow($authFormSignals)');
+    }
+
+    final authEndpointDetected = RegExp(
+      r'(action\.php\?(login|register)|/login\b|/register\b|auth/login|member/auth/login)',
+      caseSensitive: false,
+    ).hasMatch(content);
+    if (authEndpointDetected && baseGamblingScore > 0) {
+      score += 1;
+      matches.add('authEndpoint');
+    }
+
+    final lineContactDetected = RegExp(
+      r'(line\.me\/r\/ti\/p|lin\.ee/|ibit\.ly/)',
+      caseSensitive: false,
+    ).hasMatch(content);
+    final strongTitleMetaSignal = titleMetaStrongHits > 0;
+    if (lineContactDetected &&
+        (providerHits > 0 || financialHits > 0 || strongTitleMetaSignal)) {
+      score += 1;
+      matches.add('lineContact');
+    }
+
+    final linkActionHits = _countContainsNormalized(linksLower, <String>[
+      'เข้าสู่ระบบ',
+      'สมัครสมาชิก',
+      'ทางเข้าเล่น',
+      'โปรโมชั่น',
+      'ติดต่อ',
+      'login',
+      'register',
+      'promotion',
+    ]);
+    if (linkActionHits >= 2 &&
+        (providerHits > 0 || financialHits > 0 || strongTitleMetaSignal)) {
+      score += 1;
+      matches.add('linkActions($linkActionHits)');
+    }
+
+    final imageBrandingHits = _countContainsNormalized(imagesLower, <String>[
+      ..._keywords.gameProviders,
+      'คาสิโน',
+      'สล็อต',
+      'บาคาร่า',
+      'เดิมพัน',
+      'พนัน',
+    ]);
+    if (imageBrandingHits >= 2 &&
+        (providerHits > 0 || financialHits > 0 || strongTitleMetaSignal)) {
+      score += 1;
+      matches.add('imageBranding($imageBrandingHits)');
+    }
+
+    _log('Score detail: $score (${matches.join(", ")})');
     return score;
   }
+
+  bool _containsNormalized(String haystack, String needle) {
+    final normalizedNeedle = _normalizeForMatch(needle);
+    if (normalizedNeedle.isEmpty) return false;
+    return _normalizeForMatch(haystack).contains(normalizedNeedle);
+  }
+
+  int _countContainsNormalized(String haystack, List<String> needles) {
+    var hits = 0;
+    for (final needle in needles) {
+      if (_containsNormalized(haystack, needle)) hits++;
+    }
+    return hits;
+  }
+
+  String _extractStructuredSection(String content, String label) {
+    final start = content.indexOf(label);
+    if (start == -1) return '';
+
+    final sectionStart = start + label.length;
+    final sectionEnd = content.indexOf(' ||| ', sectionStart);
+    if (sectionEnd == -1) {
+      return content.substring(sectionStart).trim();
+    }
+    return content.substring(sectionStart, sectionEnd).trim();
+  }
+
+  String _normalizeForMatch(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s\-_]'), '');
+  }
+
 }

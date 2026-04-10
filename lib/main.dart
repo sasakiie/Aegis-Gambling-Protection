@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'controllers/ad_removal_cache.dart';
 import 'controllers/app_config.dart';
@@ -20,7 +22,7 @@ Future<void> main() async {
     );
   } catch (e) {
     DebugLogger.instance.error('Config load failed: $e');
-    print('Config load failed: $e - app will continue with defaults');
+    stderr.writeln('Config load failed: $e - app will continue with defaults');
   }
 
   try {
@@ -32,7 +34,9 @@ Future<void> main() async {
     );
   } catch (e) {
     DebugLogger.instance.error('Keywords load failed: $e');
-    print('gambling_keywords.json load failed: $e - using fallback keywords');
+    stderr.writeln(
+      'gambling_keywords.json load failed: $e - using fallback keywords',
+    );
   }
 
   try {

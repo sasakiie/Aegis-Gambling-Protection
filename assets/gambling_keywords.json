@@ -127,7 +127,9 @@
     "mahagame",
     "1xlite",
     "3xbet.money",
-    "sexy365bet"
+    "sexy365bet",
+    "debet",
+    "rb289"
   ],
   "thai_keywords": [
     "เครดิตฟรี",
@@ -163,6 +165,24 @@
     "แตกง่าย",
     "แตกหนัก",
     "เว็บสล็อต"
+  ],
+  "thai_title_meta_strong": [
+    "คาสิโนออนไลน์",
+    "สล็อตออนไลน์",
+    "เกมสล็อต",
+    "เกมคาสิโน",
+    "พนันออนไลน์",
+    "การเดิมพันกีฬา",
+    "บาคาร่าออนไลน์",
+    "สล็อตเว็บตรง",
+    "แทงบอลออนไลน์"
+  ],
+  "thai_title_meta_medium": [
+    "ฝากถอนออโต้",
+    "เครดิตฟรี",
+    "เว็บตรง",
+    "ทุกค่ายเกม",
+    "ไม่ผ่านเอเย่นต์"
   ],
   "url_regex_patterns": [
     "ufa\\d+",
@@ -221,7 +241,12 @@
     "1xlite",
     "3xbet",
     "3xbet\\.money",
-    "sexy\\d*bet"
+    "sexy\\d*bet",
+    "debet\\.(?:com|net|org|asia|cc|uk|us|win|fun|life|mobi|pro|vip)",
+    "ufa[a-z]+\\d*",
+    "ufa[\\-_]?\\d+[a-z]*",
+    "huay[a-z0-9]+",
+    "rb\\d{2,3}\\.(?:online|vip|pro|win)"
   ],
   "game_providers": [
     "pgsoft",

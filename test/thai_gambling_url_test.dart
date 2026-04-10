@@ -1,18 +1,18 @@
+﻿// ============================================================================
+// AEGIS Shield â€” Thai Gambling URL Dataset Test
 // ============================================================================
-// AEGIS Shield — Thai Gambling URL Dataset Test
-// ============================================================================
-// ทดสอบว่า AEGIS สามารถตรวจจับเว็บพนันไทยจากข้อมูลจริง 31 URL ได้หรือไม่
+// à¸—à¸”à¸ªà¸­à¸šà¸§à¹ˆà¸² AEGIS à¸ªà¸²à¸¡à¸²à¸£à¸–à¸•à¸£à¸§à¸ˆà¸ˆà¸±à¸šà¹€à¸§à¹‡à¸šà¸žà¸™à¸±à¸™à¹„à¸—à¸¢à¸ˆà¸²à¸à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ˆà¸£à¸´à¸‡ 31 URL à¹„à¸”à¹‰à¸«à¸£à¸·à¸­à¹„à¸¡à¹ˆ
 //
-// Data source: รวบรวมจากผู้พัฒนา (real-world Thai gambling URLs)
+// Data source: à¸£à¸§à¸šà¸£à¸§à¸¡à¸ˆà¸²à¸à¸œà¸¹à¹‰à¸žà¸±à¸’à¸™à¸² (real-world Thai gambling URLs)
 //
-// วิธีรัน:
+// à¸§à¸´à¸˜à¸µà¸£à¸±à¸™:
 //   flutter test test/thai_gambling_url_test.dart
 // ============================================================================
 
 import 'package:flutter_test/flutter_test.dart';
 
 // ============================================================================
-// Standalone KeywordLoader สำหรับ Unit Test
+// Standalone KeywordLoader à¸ªà¸³à¸«à¸£à¸±à¸š Unit Test
 // ============================================================================
 class TestKeywordLoader {
   final List<String> brands;
@@ -54,7 +54,7 @@ class TestKeywordLoader {
 }
 
 // ============================================================================
-// Keywords ตรงตาม gambling_keywords.json ล่าสุด
+// Keywords à¸•à¸£à¸‡à¸•à¸²à¸¡ gambling_keywords.json à¸¥à¹ˆà¸²à¸ªà¸¸à¸”
 // ============================================================================
 final _testLoader = TestKeywordLoader(
   brands: [
@@ -167,7 +167,7 @@ final _testLoader = TestKeywordLoader(
 );
 
 // ============================================================================
-// Thai Gambling URL Dataset (31 URLs จากผู้พัฒนา)
+// Thai Gambling URL Dataset (31 URLs à¸ˆà¸²à¸à¸œà¸¹à¹‰à¸žà¸±à¸’à¸™à¸²)
 // ============================================================================
 const List<Map<String, String>> thaiGamblingUrls = [
   {'url': 'https://sexy365bet.net/', 'brand': 'sexy365bet'},
@@ -213,10 +213,10 @@ const List<Map<String, String>> thaiGamblingUrls = [
 // TEST SUITE
 // ============================================================================
 void main() {
-  group('🇹🇭 Thai Gambling URL Dataset Test (31 URLs)', () {
+  group('ðŸ‡¹ðŸ‡­ Thai Gambling URL Dataset Test (31 URLs)', () {
     for (final entry in thaiGamblingUrls) {
       test(
-        'should block: ${entry['brand']} → ${Uri.parse(entry['url']!).host}',
+        'should block: ${entry['brand']} â†’ ${Uri.parse(entry['url']!).host}',
         () {
           expect(
             _testLoader.isGambling(entry['url']!),
@@ -228,7 +228,7 @@ void main() {
       );
     }
 
-    test('📊 Overall detection rate should be 100%', () {
+    test('ðŸ“Š Overall detection rate should be 100%', () {
       int detected = 0;
       final List<String> missed = [];
 
@@ -245,15 +245,15 @@ void main() {
       // ignore: avoid_print
       print('\n${'=' * 60}');
       // ignore: avoid_print
-      print('📊 Thai Gambling URL Dataset — Detection Report');
+      print('ðŸ“Š Thai Gambling URL Dataset â€” Detection Report');
       // ignore: avoid_print
-      print('${'=' * 60}');
+      print('=' * 60);
       // ignore: avoid_print
       print('  Detected: $detected/${thaiGamblingUrls.length} ($rate%)');
 
       if (missed.isNotEmpty) {
         // ignore: avoid_print
-        print('  ❌ MISSED:');
+        print('  âŒ MISSED:');
         for (final m in missed) {
           // ignore: avoid_print
           print('    - $m');
@@ -271,10 +271,10 @@ void main() {
     });
   });
 
-  // ════════════════════════════════════════════════════════════════════
-  // False Positive Test — เว็บปลอดภัยต้องไม่ถูกบล็อค
-  // ════════════════════════════════════════════════════════════════════
-  group('✅ False Positive Prevention', () {
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // False Positive Test â€” à¹€à¸§à¹‡à¸šà¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¸•à¹‰à¸­à¸‡à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸šà¸¥à¹‡à¸­à¸„
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  group('âœ… False Positive Prevention', () {
     const safeWebsites = [
       'https://www.google.com',
       'https://www.thairath.co.th',
@@ -307,3 +307,4 @@ void main() {
     }
   });
 }
+
